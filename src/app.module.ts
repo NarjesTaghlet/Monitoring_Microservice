@@ -17,7 +17,7 @@ import { HttpModule } from '@nestjs/axios';
     }),
     HttpModule,
     ScheduleModule.forRoot(),
-    TypeOrmModule.forRootAsync({
+   /* TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
         console.log('SECRET_KEY in TypeOrm config:', process.env.SECRET_KEY); // Debug
@@ -34,7 +34,7 @@ import { HttpModule } from '@nestjs/axios';
         };
       },
       inject: [ConfigService],
-    }),
+    }),*/
    MonitoringModule,
   ],
   controllers: [AppController],

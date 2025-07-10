@@ -20,7 +20,7 @@ export class MonitoringController {
 */
 
 // Pour Medium Plan
-  @Post('start-cron')
+  /*@Post('start-cron')
   @UseGuards(TokenGuard)
   async startCron(@Request() req) {
    
@@ -37,8 +37,8 @@ export class MonitoringController {
 
     this.monitoringService.addUserConfig(userId,region,cluster,service,targetGroupArn,albArn,asgName)
     
-    this.monitoringService.addCronJob(userId, '*/5 * * * *');
-  }
+    this.monitoringService.addCronJob(userId, '');
+  }*/
   
 
   @Post('historical')

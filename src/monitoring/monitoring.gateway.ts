@@ -27,7 +27,7 @@ import { firstValueFrom } from 'rxjs';
 @WebSocketGateway({
   namespace: 'metrics',
   cors: {
-    origin: 'http://localhost:4200',
+    origin:  process.env.FRONTEND_URL || 'http://localhost:4200',
   },
 })
 @UseGuards(WsAuthGuard) // Apply guard at gateway level
@@ -80,10 +80,12 @@ afterInit(server: Server) {
       console.log(access_token)
       
       if (!access_token) return next(new Error('No token'));
+
+       const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:3030';
       
       try {
       const response = await firstValueFrom(
-            this.httpService.post('http://localhost:3030/auth/verify', { access_token }, {
+            this.httpService.post(`${userServiceUrl}/auth/verify`, { access_token }, {
               headers: { 'Content-Type': 'application/json' },
             }),
           );

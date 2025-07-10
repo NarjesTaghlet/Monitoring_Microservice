@@ -61,7 +61,7 @@ export class MonitoringService {
 
   constructor(
     private readonly httpService: HttpService,
-    @InjectRepository(EcsMetric) private metricRepository: Repository<EcsMetric>,
+   // @InjectRepository(EcsMetric) private metricRepository: Repository<EcsMetric>,
     private readonly schedulerRegistry: SchedulerRegistry,
      
 
@@ -77,7 +77,7 @@ export class MonitoringService {
  // pour basic plan=> aws sdk et call api => bouton refresh ! 
   
   
-addCronJob(userId: string, cronExpression: string) {
+/*addCronJob(userId: string, cronExpression: string) {
     const job = new CronJob(cronExpression, () => {
       this.collectECSMetrics(parseInt(userId,10)); // Nom de méthode corrigé
     });
@@ -94,10 +94,10 @@ addCronJob(userId: string, cronExpression: string) {
       this.schedulerRegistry.deleteCronJob(`user-${userId}`);
     }
   }
-
+*/
   
   // monitoring.service.ts
-async collectECSMetrics(userId: number): Promise<void> {
+/*async collectECSMetrics(userId: number): Promise<void> {
 
     const config = this.userConfigs.get(userId);
     if (!config) {
@@ -315,7 +315,7 @@ const credentials = await this.fetchTempCredentials(userId)
     throw new Error(`Échec de la collecte des métriques : ${(error as Error).message}`);
   }
 }
-
+*/
 
 
 async verifyECSDeployment(userId: number, region: string, cluster: string, service: string) {

@@ -13,10 +13,9 @@ import { WsAuthGuard } from './Guards/WsAuthGuard';
 
 @Module({
    imports: [
-    TypeOrmModule.forFeature([EcsMetric]), // Import the User entity for TypeORM
+   // TypeOrmModule.forFeature([EcsMetric]), // Import the User entity for TypeORM
     HttpModule,
     ScheduleModule.forRoot(),
-    
     JwtModule.register({
       secret: 'mysecretkey', // Ensure SECRET_KEY is defined in your .env file
       signOptions: {
