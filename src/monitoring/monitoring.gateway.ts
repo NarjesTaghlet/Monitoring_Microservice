@@ -21,7 +21,6 @@ import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
   namespace: 'metrics',
   cors: {
     origin: (requestOrigin: string, callback) => {
-      // Géré dynamiquement dans afterInit
       callback(null, true);
     },
     credentials: true
@@ -31,12 +30,8 @@ import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
 @WebSocketGateway({
   namespace: 'metrics',
   cors: {
-    origin: (requestOrigin: string, callback) => {
-      // Géré dynamiquement dans afterInit
-      callback(null, true);
-    },
-    credentials: true
-  }
+    origin:  process.env.FRONTEND_URL || 'http://localhost:4200',
+  },
 })
 @UseGuards(WsAuthGuard) // Apply guard at gateway level
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect ,OnGatewayInit{
@@ -47,7 +42,11 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
   private clients = new Map<string, { userId: number; siteName: string }>();
   private readonly clientSubscriptions = new Map<string, { userId: number; siteName: string }>();
 
-  constructor(private monitoringService: MonitoringService ,private httpService: HttpService , private configService : ConfigService) {}
+  constructor(private monitoringService: MonitoringService ,private httpService: HttpService , private configService : ConfigService) {
+    
+    //  clientID: process.env.GOOGLE_CLIENT_ID,
+     // clientSecret: process.env.GOOGLE_SECRET_ID,
+  }
 
  private extractToken(client: Socket): string | null {
     // 1. Check handshake auth first
@@ -84,20 +83,10 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 
 afterInit(server: Server) {
 
-
-   // Configuration dynamique du CORS
+   // SOLUTION: Utiliser server.sockets au lieu de server.engine
     const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:4200';
-    
-    server.engine.on("initial_headers", (headers) => {
-      headers['Access-Control-Allow-Origin'] = frontendUrl;
-      headers['Access-Control-Allow-Credentials'] = 'true';
-    });
 
-    server.engine.on("headers", (headers) => {
-      headers['Access-Control-Allow-Origin'] = frontendUrl;
-      headers['Access-Control-Allow-Credentials'] = 'true';
-    });
-    
+
     server.use(async (socket, next) => {
       const access_token = this.extractToken(socket);
       console.log(access_token)
