@@ -19,7 +19,7 @@ import { WsAuthGuard } from './Guards/WsAuthGuard';
     JwtModule.register({
       secret: 'mysecretkey', // Ensure SECRET_KEY is defined in your .env file
       signOptions: {
-        expiresIn: '1h', // Use a string for expiration time
+        expiresIn: '2h', // Use a string for expiration time
       },
     }),
   ],
