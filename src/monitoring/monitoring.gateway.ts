@@ -17,12 +17,10 @@ import { WsAuthGuard } from './Guards/WsAuthGuard';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
-@WebSocketGateway(3006, {
+@WebSocketGateway(3006, { 
   namespace: 'metrics',
   cors: {
-    origin: (requestOrigin: string, callback) => {
-      callback(null, true);
-    },
+    origin: process.env.FRONTEND_URL || 'http://localhost:4200',
     credentials: true
   }
 })
@@ -82,11 +80,6 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 
 
 afterInit(server: Server) {
-
-   // SOLUTION: Utiliser server.sockets au lieu de server.engine
-    const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:4200';
-
-
     server.use(async (socket, next) => {
       const access_token = this.extractToken(socket);
       console.log(access_token)
