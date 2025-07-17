@@ -17,10 +17,13 @@ import { WsAuthGuard } from './Guards/WsAuthGuard';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
-@WebSocketGateway(3006, { 
+@WebSocketGateway(3006, {
   namespace: 'metrics',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+    origin: (requestOrigin: string, callback) => {
+      // Géré dynamiquement dans afterInit
+      callback(null, true);
+    },
     credentials: true
   }
 })
@@ -28,8 +31,12 @@ import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
 @WebSocketGateway({
   namespace: 'metrics',
   cors: {
-    origin:  process.env.FRONTEND_URL || 'http://localhost:4200',
-  },
+    origin: (requestOrigin: string, callback) => {
+      // Géré dynamiquement dans afterInit
+      callback(null, true);
+    },
+    credentials: true
+  }
 })
 @UseGuards(WsAuthGuard) // Apply guard at gateway level
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect ,OnGatewayInit{
@@ -76,6 +83,21 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 
 
 afterInit(server: Server) {
+
+
+   // Configuration dynamique du CORS
+    const frontendUrl = this.configService.get('FRONTEND_URL') || 'http://localhost:4200';
+    
+    server.engine.on("initial_headers", (headers) => {
+      headers['Access-Control-Allow-Origin'] = frontendUrl;
+      headers['Access-Control-Allow-Credentials'] = 'true';
+    });
+
+    server.engine.on("headers", (headers) => {
+      headers['Access-Control-Allow-Origin'] = frontendUrl;
+      headers['Access-Control-Allow-Credentials'] = 'true';
+    });
+    
     server.use(async (socket, next) => {
       const access_token = this.extractToken(socket);
       console.log(access_token)
