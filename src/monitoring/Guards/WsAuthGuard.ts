@@ -3,12 +3,13 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Socket } from 'socket.io';
 import { WsException } from '@nestjs/websockets';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class WsAuthGuard implements CanActivate {
   private readonly logger = new Logger(WsAuthGuard.name);
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(private readonly httpService: HttpService , private readonly configService : ConfigService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const client = context.switchToWs().getClient<Socket>();
@@ -22,11 +23,15 @@ export class WsAuthGuard implements CanActivate {
       throw new WsException('No token provided');
     }
 
+
+    const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', 'http://localhost:3030');
+
+
     try {
       console.log('Verifying token with auth service...');
       const response = await firstValueFrom(
         this.httpService.post(
-          'http://localhost:3030/auth/verify',
+          `${userServiceUrl}/auth/verify`,
           { access_token },
           { headers: { 'Content-Type': 'application/json' } }
         )

@@ -16,6 +16,7 @@ import { MonitoringService } from './monitoring.service';
 import { WsAuthGuard } from './Guards/WsAuthGuard';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
 @WebSocketGateway(3006, { 
   namespace: 'metrics',
   cors: {
@@ -39,7 +40,7 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
   private clients = new Map<string, { userId: number; siteName: string }>();
   private readonly clientSubscriptions = new Map<string, { userId: number; siteName: string }>();
 
-  constructor(private monitoringService: MonitoringService ,private httpService: HttpService) {}
+  constructor(private monitoringService: MonitoringService ,private httpService: HttpService , private configService : ConfigService) {}
 
  private extractToken(client: Socket): string | null {
     // 1. Check handshake auth first
@@ -81,7 +82,9 @@ afterInit(server: Server) {
       
       if (!access_token) return next(new Error('No token'));
 
-       const userServiceUrl = process.env.USER_SERVICE_URL || 'http://localhost:3030';
+      const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', 'http://localhost:3030');
+
+
       
       try {
       const response = await firstValueFrom(
