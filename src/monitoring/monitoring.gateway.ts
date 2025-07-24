@@ -20,7 +20,7 @@ import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
 @WebSocketGateway(3006, { 
   namespace: 'metrics',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+origin: '*',
     credentials: true
   }
 })
