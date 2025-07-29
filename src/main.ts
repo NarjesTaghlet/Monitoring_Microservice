@@ -5,7 +5,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   //const app = await NestFactory.create(AppModule);
   app.enableCors({
-    origin: 'http://localhost:4200', // ✅ Autoriser uniquement le frontend Angular
+    origin: ['http://localhost:4200','https://d1fsr28fh19wdy.cloudfront.net'], // ✅ Autoriser uniquement le frontend Angular
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     allowedHeaders: 'Content-Type,Authorization',
     credentials: true, // ✅ Si besoin d'authentification (JWT, Cookies)
@@ -16,7 +16,7 @@ async function bootstrap() {
    const allowedOrigins = [
      'https://dpfzuq7w5fb82.cloudfront.net',
          'https://d3lkl4tdwg9nb5.cloudfront.net',
-         'https://d2k1rrgcfjq38f.cloudfront.net',
+         'https://d1fsr28fh19wdy.cloudfront.net',
     'alb-myapp-299605994.us-east-1.elb.amazonaws.com',
      'https://*.cloudfront.net',
      'http://localhost:3030' // For local development
