@@ -21,8 +21,13 @@ import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
   namespace: 'metrics',
   cors: {
 origin: '*',
-    credentials: true
-  }
+    credentials: true,
+      methods: ['GET', 'POST'],
+    allowedHeaders: ['Authorization'],
+
+  },
+   transports: ['websocket']
+
 })
 
 @WebSocketGateway({
