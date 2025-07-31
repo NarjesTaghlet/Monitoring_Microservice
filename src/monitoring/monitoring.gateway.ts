@@ -18,7 +18,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
 @WebSocketGateway(3006, { 
-  namespace: 'metrics',
+  //namespace: 'metrics',
   cors: {
 origin: '*',
     credentials: true,
@@ -26,6 +26,7 @@ origin: '*',
     allowedHeaders: ['Authorization'],
 
   },
+  path: '/socket.io' ,// Required for API Gateway
    transports: ['websocket']
 
 })
@@ -80,6 +81,9 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 
 
 afterInit(server: Server) {
+
+  
+      
     server.use(async (socket, next) => {
       const access_token = this.extractToken(socket);
       console.log(access_token)
