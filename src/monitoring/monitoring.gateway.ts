@@ -18,7 +18,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigChangeEvent, ConfigService } from '@nestjs/config';
 @WebSocketGateway(3006, { 
-  //namespace: 'metrics',
+  namespace: 'metrics',
   cors: {
 origin: '*',
     credentials: true,
@@ -26,7 +26,6 @@ origin: '*',
     allowedHeaders: ['Authorization'],
 
   },
-  path: '/socket.io' ,// Required for API Gateway
    transports: ['websocket']
 
 })
@@ -81,36 +80,37 @@ export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconne
 
 
 afterInit(server: Server) {
-
-  
+  server.use(async (socket, next) => {
+    try {
+      // 1. Vérifier le token dans les query parameters
+      const token = socket.handshake.query.token;
+      console.log(`Token reçu: ${token}`);
       
-    server.use(async (socket, next) => {
-      const access_token = this.extractToken(socket);
-      console.log(access_token)
-      
-      if (!access_token) return next(new Error('No token'));
-
-      const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', 'http://localhost:3030');
-
-
-      
-      try {
-      const response = await firstValueFrom(
-            this.httpService.post(`${userServiceUrl}/auth/verify`, { access_token }, {
-              headers: { 'Content-Type': 'application/json' },
-            }),
-          );
-        console.log("repsonse",response)
-        socket.data.user = response.data;
-        console.log(socket.data.user)
-        next();
-      } catch (e) {
-        next(new Error('Invalid token hehe'));
+      if (!token) {
+        console.error('Aucun token fourni');
+        return next(new Error('Erreur d\'authentification'));
       }
-    });
 
-       
-  }
+      // 2. Vérifier le token via votre service utilisateur
+      const userServiceUrl = this.configService.get('USER_SERVICE_URL');
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${userServiceUrl}/auth/verify`,
+          { access_token: token },
+          { headers: { 'Content-Type': 'application/json' } }
+        )
+      );
+
+      // 3. Attacher les données utilisateur au socket
+      socket.data.user = response.data;
+      next();
+    } catch (error) {
+      console.error('Échec de la vérification du token', error.response?.data);
+      next(new Error('Échec de l\'authentification'));
+    }
+  });
+}
+
   // Periodic task to fetch and broadcast metrics
   @Interval(3000) // Every 3 seconds
   async handleMetricsUpdate() {
