@@ -204,15 +204,9 @@ afterInit(server: Server) {
   }
 }
   */
- import { Logger } from '@nestjs/common';
-import { Interval } from '@nestjs/schedule';
-import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
-  MessageBody,
-  ConnectedSocket,
-} from '@nestjs/websockets';
+ // monitoring.gateway.ts
+import { Logger } from '@nestjs/common';
+import { WebSocketGateway, WebSocketServer, OnGatewayInit } from '@nestjs/websockets';
 import { Server, WebSocket } from 'ws';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -221,18 +215,13 @@ import { MonitoringService } from './monitoring.service';
 
 @WebSocketGateway(3006, {
   path: '/metrics',
-  cors: {
-    origin: process.env.FRONTEND_URL || 'https://<your-cloudfront-domain>', // e.g., https://d123456abcdef.cloudfront.net
-    credentials: true,
-  },
 })
-export class MonitoringGateway {
+export class MonitoringGateway implements OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
   private logger = new Logger(MonitoringGateway.name);
-  private clients = new Map<string, { userId: number; siteName: string; socket: WebSocket }>();
-  private clientIdCounter = 0;
+  private clients = new Map<WebSocket, { userId: number; siteName: string }>();
 
   constructor(
     private monitoringService: MonitoringService,
@@ -240,96 +229,65 @@ export class MonitoringGateway {
     private configService: ConfigService,
   ) {}
 
-  async afterInit() {
-    this.server.on('connection', async (socket: WebSocket, request: any) => {
-      const clientId = `client-${this.clientIdCounter++}`;
-      const url = new URL(request.url || '/', 'https://localhost');
+  afterInit(server: Server) {
+    server.on('connection', (socket: WebSocket, request) => {
+      const url = new URL(request.url, 'http://localhost');
       const token = url.searchParams.get('token');
-
+      
       if (!token) {
         socket.close(1008, 'No token provided');
-        this.logger.warn(`Client ${clientId} rejected: No token`);
         return;
       }
 
-      const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', 'http://localhost:3030');
-      try {
-        const response = await firstValueFrom(
-          this.httpService.post(`${userServiceUrl}/auth/verify`, { access_token: token }, {
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-        const userId = response.data.userId;
-        this.logger.log(`Client ${clientId} connected: User ${userId}`);
-        this.clients.set(clientId, { userId, siteName: '', socket });
-
-        socket.on('close', () => {
-          this.logger.log(`Client ${clientId} disconnected`);
-          this.clients.delete(clientId);
-        });
-
-        socket.on('message', (data) => {
-          try {
-            const message = JSON.parse(data.toString());
-            this.handleMessage(clientId, socket, message);
-          } catch (e) {
-            socket.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
-          }
-        });
-      } catch (e) {
-        this.logger.error(`Token verification failed for ${clientId}: ${e.message}`);
-        socket.close(1008, 'Invalid token');
-      }
+      this.authenticate(socket, token).catch(err => {
+        this.logger.error(`Authentication failed: ${err.message}`);
+        socket.close(1008, 'Authentication failed');
+      });
     });
   }
 
-  private async handleMessage(clientId: string, socket: WebSocket, message: any) {
-    if (message.action !== 'subscribeMetrics') {
-      socket.send(JSON.stringify({ type: 'error', message: 'Unknown action' }));
-      return;
-    }
-
-    const client = this.clients.get(clientId);
-    if (!client) {
-      socket.send(JSON.stringify({ type: 'error', message: 'Client not authenticated' }));
-      return;
-    }
-
-    const { userId } = client;
-    const { siteName, range } = message;
-    if (!siteName || !range) {
-      socket.send(JSON.stringify({ type: 'error', message: 'Missing siteName or range' }));
-      return;
-    }
-
-    this.clients.set(clientId, { ...client, siteName });
-    this.logger.debug(`Client ${clientId} subscribed to site ${siteName}`);
-
+  private async authenticate(socket: WebSocket, token: string) {
+    const userServiceUrl = this.configService.get('USER_SERVICE_URL', 'http://user-service:3030');
+    
     try {
-      const [realtime, historical] = await Promise.all([
-        this.monitoringService.collectECSMetricsss(userId, siteName),
-        this.monitoringService.getHistoricalMetrics(userId, parseInt(range, 10), siteName),
-      ]);
-      socket.send(JSON.stringify({ type: 'metricsUpdate', payload: realtime }));
-      socket.send(JSON.stringify({ type: 'historicalMetrics', payload: historical }));
-    } catch (err) {
-      this.logger.error(`Metrics fetch failed for ${clientId}: ${err.message}`);
-      socket.send(JSON.stringify({ type: 'error', message: `Failed to fetch metrics: ${err.message}` }));
+      const response = await firstValueFrom(
+        this.httpService.post(`${userServiceUrl}/auth/verify`, { access_token: token })
+      );
+      
+      const userId = response.data.userId;
+      this.clients.set(socket, { userId, siteName: '' });
+      
+      socket.on('message', (data) => this.handleMessage(socket, data));
+      socket.on('close', () => this.clients.delete(socket));
+      
+      this.logger.log(`Client connected: User ${userId}`);
+    } catch (error) {
+      throw new Error('Token verification failed');
     }
   }
 
-  @Interval(3000)
-  async handleMetricsUpdate() {
-    this.logger.debug(`Running metrics update for ${this.clients.size} clients`);
-    for (const [clientId, { userId, siteName, socket }] of this.clients) {
-      if (!siteName || socket.readyState !== WebSocket.OPEN) continue;
-      try {
-        const metrics = await this.monitoringService.collectECSMetricsss(userId, siteName);
-        socket.send(JSON.stringify({ type: 'metricsUpdate', payload: metrics }));
-      } catch (err) {
-        this.logger.error(`Failed to fetch metrics for ${clientId}: ${err.message}`);
-        socket.send(JSON.stringify({ type: 'error', message: `Failed to fetch metrics: ${err.message}` }));
+  private async handleMessage(socket: WebSocket, data: Buffer) {
+    try {
+      const message = JSON.parse(data.toString());
+      const client = this.clients.get(socket);
+      
+      if (message.action === 'subscribeMetrics') {
+        const { siteName, range } = message;
+        client.siteName = siteName;
+        
+        const [realtime, historical] = await Promise.all([
+          this.monitoringService.collectECSMetricsss(client.userId, siteName),
+          this.monitoringService.getHistoricalMetrics(client.userId, parseInt(range, 10), siteName),
+        ]);
+        
+        socket.send(JSON.stringify({ type: 'metricsUpdate', payload: realtime }));
+        socket.send(JSON.stringify({ type: 'historicalMetrics', payload: historical }));
       }
+    } catch (error) {
+      socket.send(JSON.stringify({ 
+        type: 'error', 
+        message: error.message || 'Invalid message format'
+      }));
     }
   }
 }
