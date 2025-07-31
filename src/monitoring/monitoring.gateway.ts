@@ -1,4 +1,4 @@
-/*import { Logger, UseGuards } from '@nestjs/common';
+import { Logger, UseGuards } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import {
   WebSocketGateway,
@@ -203,91 +203,5 @@ afterInit(server: Server) {
     this.server.to(`user-${userId}`).emit('metricsUpdate', metrics);
   }
 }
-  */
+  
  // monitoring.gateway.ts
-import { Logger } from '@nestjs/common';
-import { WebSocketGateway, WebSocketServer, OnGatewayInit } from '@nestjs/websockets';
-import { Server, WebSocket } from 'ws';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { ConfigService } from '@nestjs/config';
-import { MonitoringService } from './monitoring.service';
-
-@WebSocketGateway(3006, {
-  path: '/metrics',
-})
-export class MonitoringGateway implements OnGatewayInit {
-  @WebSocketServer()
-  server: Server;
-
-  private logger = new Logger(MonitoringGateway.name);
-  private clients = new Map<WebSocket, { userId: number; siteName: string }>();
-
-  constructor(
-    private monitoringService: MonitoringService,
-    private httpService: HttpService,
-    private configService: ConfigService,
-  ) {}
-
-  afterInit(server: Server) {
-    server.on('connection', (socket: WebSocket, request) => {
-      const url = new URL(request.url, 'http://localhost');
-      const token = url.searchParams.get('token');
-      
-      if (!token) {
-        socket.close(1008, 'No token provided');
-        return;
-      }
-
-      this.authenticate(socket, token).catch(err => {
-        this.logger.error(`Authentication failed: ${err.message}`);
-        socket.close(1008, 'Authentication failed');
-      });
-    });
-  }
-
-  private async authenticate(socket: WebSocket, token: string) {
-    const userServiceUrl = this.configService.get('USER_SERVICE_URL', 'http://user-service:3030');
-    
-    try {
-      const response = await firstValueFrom(
-        this.httpService.post(`${userServiceUrl}/auth/verify`, { access_token: token })
-      );
-      
-      const userId = response.data.userId;
-      this.clients.set(socket, { userId, siteName: '' });
-      
-      socket.on('message', (data) => this.handleMessage(socket, data));
-      socket.on('close', () => this.clients.delete(socket));
-      
-      this.logger.log(`Client connected: User ${userId}`);
-    } catch (error) {
-      throw new Error('Token verification failed');
-    }
-  }
-
-  private async handleMessage(socket: WebSocket, data: Buffer) {
-    try {
-      const message = JSON.parse(data.toString());
-      const client = this.clients.get(socket);
-      
-      if (message.action === 'subscribeMetrics') {
-        const { siteName, range } = message;
-        client.siteName = siteName;
-        
-        const [realtime, historical] = await Promise.all([
-          this.monitoringService.collectECSMetricsss(client.userId, siteName),
-          this.monitoringService.getHistoricalMetrics(client.userId, parseInt(range, 10), siteName),
-        ]);
-        
-        socket.send(JSON.stringify({ type: 'metricsUpdate', payload: realtime }));
-        socket.send(JSON.stringify({ type: 'historicalMetrics', payload: historical }));
-      }
-    } catch (error) {
-      socket.send(JSON.stringify({ 
-        type: 'error', 
-        message: error.message || 'Invalid message format'
-      }));
-    }
-  }
-}
