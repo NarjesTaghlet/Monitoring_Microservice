@@ -18,7 +18,16 @@ export class MonitoringController {
 
 
 */
+@Get('/health')
+  healthCheck() {
+    return { status: 'ok', port: 3035 };
+  }
 
+  // Point de terminaison WebSocket
+  @Get('/health-ws')
+  wsHealthCheck() {
+    return { status: 'ok', port: 3006 };
+  }
 // Pour Medium Plan
   /*@Post('start-cron')
   @UseGuards(TokenGuard)
