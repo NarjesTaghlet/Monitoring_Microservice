@@ -30,12 +30,7 @@ origin: '*',
 
 })
 
-@WebSocketGateway({
-  namespace: 'metrics',
-  cors: {
-    origin:  process.env.FRONTEND_URL || 'http://localhost:4200',
-  },
-})
+
 @UseGuards(WsAuthGuard) // Apply guard at gateway level
 export class MonitoringGateway implements OnGatewayConnection, OnGatewayDisconnect ,OnGatewayInit{
   @WebSocketServer()
