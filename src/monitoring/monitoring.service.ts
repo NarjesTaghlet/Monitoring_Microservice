@@ -25,6 +25,7 @@ import {
 import { AxiosResponse } from 'axios';
 
 import * as dotenv from 'dotenv' ;
+import { ConfigService } from '@nestjs/config';
 dotenv.config();
 
 
@@ -63,6 +64,7 @@ export class MonitoringService {
     private readonly httpService: HttpService,
    // @InjectRepository(EcsMetric) private metricRepository: Repository<EcsMetric>,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly configService : ConfigService
      
 
   ) {this.userConfigs = new Map<number, EcsConfig>();}
@@ -483,6 +485,13 @@ async collectECSMetricsss(userId: number, siteName : string ,retries: number = 2
 
 
     const resultt = await this.fetchEcsResourcesForSite(userId,siteName)
+
+    const awsAccessKeyId_management = this.configService.get<string>('AWS_ACCESS_KEY_ID');
+const awsSecretAccessKey_management = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
+const awsSessionToken_management = this.configService.get<string>('AWS_SESSION_TOKEN'); // optionnel
+
+
+
     console.log("eresult",resultt)
     await this.addUserConfig(userId,'us-east-1',resultt.clusterName,resultt.serviceName,resultt.targetGroupArn,resultt.loadBalancerArn,resultt.asgName)
 
@@ -767,7 +776,12 @@ async collectECSMetricsss(userId: number, siteName : string ,retries: number = 2
     }));
 
   // Sauvegarde dans DynamoDB
-  const dynamoDbClient = new DynamoDBClient({ region: 'us-east-1' });
+  const dynamoDbClient = new DynamoDBClient({ region: 'us-east-1' ,
+    credentials: {
+    accessKeyId: awsAccessKeyId_management,
+    secretAccessKey: awsSecretAccessKey_management,
+  },
+  });
   const params = {
     TableName: 'EcsMetrics',
     Item: marshall(
