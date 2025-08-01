@@ -209,12 +209,12 @@ import { Interval } from '@nestjs/schedule';
 import {
   WebSocketGateway,
   WebSocketServer,
-  SubscribeMessage,
   OnGatewayInit,
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
+import { Server, WebSocket } from 'ws';
+import { IncomingMessage } from 'http';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
@@ -223,15 +223,14 @@ import * as http from 'http';
 
 @WebSocketGateway(3006, {
   path: '/metrics',
-  cors: { origin: '*', credentials: true },
-  transports: ['websocket'],
+  cors: { origin: '*', credentials: true }
 })
 export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
   private logger = new Logger(MonitoringGateway.name);
-  private clients = new Map<string, { userId: number; siteName: string }>();
+  private clients = new Map<WebSocket, { userId: number; siteName: string }>();
   private httpServer: http.Server;
 
   constructor(
@@ -241,7 +240,7 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
   ) {}
 
   afterInit() {
-    // Create HTTP server for health checks
+    // Health check server
     this.httpServer = http.createServer((req, res) => {
       if (req.url === '/health') {
         res.writeHead(200);
@@ -253,16 +252,18 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
     });
     
     this.httpServer.listen(3007, () => {
-      this.logger.log('Health check server running on port 3006');
+      this.logger.log('Health check server running on port 3007');
     });
   }
 
-  async handleConnection(socket: Socket) {
-    const token = socket.handshake.query.access_token as string;
+  async handleConnection(client: WebSocket, request: IncomingMessage) {
+    // Extract token from query parameters
+    const url = new URL(request.url || '', `http://${request.headers.host}`);
+    const token = url.searchParams.get('access_token');
     this.logger.debug(`Connection attempt with token: ${token}`);
 
     if (!token) {
-      socket.disconnect(true);
+      client.close(1008, 'Missing token');
       this.logger.warn(`Client rejected: No token`);
       return;
     }
@@ -276,72 +277,87 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
       );
       
       const userId = response.data.userId;
-      this.logger.log(`Client ${socket.id} connected: User ${userId}`);
-      this.clients.set(socket.id, { userId, siteName: '' });
+      this.logger.log(`Client connected: User ${userId}`);
+      this.clients.set(client, { userId, siteName: '' });
+
+      // Message handler
+      client.on('message', (data) => {
+        this.handleMessage(client, data.toString());
+      });
 
     } catch (e) {
       this.logger.error(`Token verification failed: ${e.message}`);
-      socket.disconnect(true);
+      client.close(1008, 'Authentication failed');
     }
   }
 
-  handleDisconnect(socket: Socket) {
-    this.logger.log(`Client ${socket.id} disconnected`);
-    this.clients.delete(socket.id);
+  handleDisconnect(client: WebSocket) {
+    this.logger.log(`Client disconnected`);
+    this.clients.delete(client);
   }
 
-  @SubscribeMessage('subscribeMetrics')
-  async handleSubscribeMetrics(
-    socket: Socket,
-    payload: { siteName: string; range: string }
-  ) {
-    const client = this.clients.get(socket.id);
-    if (!client) {
-      socket.emit('error', 'Client not authenticated');
+  private handleMessage(client: WebSocket, message: string) {
+    try {
+      const payload = JSON.parse(message);
+      
+      if (payload.action === 'subscribeMetrics') {
+        this.handleSubscribeMetrics(client, payload);
+      }
+    } catch (e) {
+      this.logger.error('Error parsing message:', e);
+      client.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+    }
+  }
+
+  private async handleSubscribeMetrics(client: WebSocket, payload: any) {
+    const clientData = this.clients.get(client);
+    if (!clientData) {
+      client.send(JSON.stringify({ type: 'error', message: 'Client not authenticated' }));
       return;
     }
 
-    const { userId } = client;
+    const { userId } = clientData;
     const { siteName, range } = payload;
     
     if (!siteName || !range) {
-      socket.emit('error', 'Missing siteName or range');
+      client.send(JSON.stringify({ type: 'error', message: 'Missing siteName or range' }));
       return;
     }
 
-    this.clients.set(socket.id, { ...client, siteName });
-    this.logger.debug(`Client ${socket.id} subscribed to site ${siteName}`);
+    // Update client data
+    this.clients.set(client, { ...clientData, siteName });
+    this.logger.debug(`Client subscribed to site ${siteName}`);
 
     try {
       const [realtime, historical] = await Promise.all([
         this.monitoringService.collectECSMetricsss(userId, siteName),
         this.monitoringService.getHistoricalMetrics(userId, parseInt(range, 10), siteName),
       ]);
-      socket.emit('metricsUpdate', realtime);
-      socket.emit('historicalMetrics', historical);
+      
+      client.send(JSON.stringify({ type: 'metricsUpdate', payload: realtime }));
+      client.send(JSON.stringify({ type: 'historicalMetrics', payload: historical }));
     } catch (err) {
       this.logger.error(`Metrics fetch failed: ${err.message}`);
-      socket.emit('error', `Failed to fetch metrics: ${err.message}`);
+      client.send(JSON.stringify({ type: 'error', message: `Failed to fetch metrics: ${err.message}` }));
     }
   }
 
   @Interval(3000)
   async handleMetricsUpdate() {
     this.logger.debug(`Running metrics update for ${this.clients.size} clients`);
-    for (const [socketId, { userId, siteName }] of this.clients) {
+    
+    for (const [client, { userId, siteName }] of this.clients) {
       if (!siteName) continue;
       
-      const socket = this.server.sockets.sockets.get(socketId);
-      if (!socket || !socket.connected) continue;
+      if (client.readyState !== WebSocket.OPEN) continue;
       
       try {
         const metrics = await this.monitoringService.collectECSMetricsss(userId, siteName);
-        socket.emit('metricsUpdate', metrics);
+        client.send(JSON.stringify({ type: 'metricsUpdate', payload: metrics }));
       } catch (err) {
         this.logger.error(`Failed to fetch metrics: ${err.message}`);
-        socket.emit('error', `Failed to fetch metrics: ${err.message}`);
+        client.send(JSON.stringify({ type: 'error', message: `Failed to fetch metrics: ${err.message}` }));
       }
     }
   }
 }
-  
