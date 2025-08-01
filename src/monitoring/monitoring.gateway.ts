@@ -204,7 +204,7 @@ afterInit(server: Server) {
   }
 }
   */
- import { Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import {
   WebSocketGateway,
@@ -220,14 +220,11 @@ import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import { MonitoringService } from './monitoring.service';
 import * as http from 'http';
-import * as express from 'express';
+import express from 'express';
 
 @WebSocketGateway(3006, {
   path: '/metrics',
-  cors: {
-    origin: '*',
-    credentials: true,
-  },
+  cors: { origin: '*', credentials: true },
   transports: ['websocket'],
 })
 export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
@@ -237,52 +234,43 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
   private logger = new Logger(MonitoringGateway.name);
   private clients = new Map<string, { userId: number; siteName: string }>();
   private httpServer: http.Server;
-  private expressApp: express.Express;
+  private readonly app = express();
 
   constructor(
     private monitoringService: MonitoringService,
     private httpService: HttpService,
     private configService: ConfigService,
   ) {
-    this.expressApp = express();
-    this.setupHealthCheck();
+    this.app.get('/health');
   }
 
-  afterInit(server: Server) {
-    this.httpServer = http.createServer(this.expressApp);
-    this.httpServer.listen(3006, () => 
-      this.logger.log('Health check server running on port 3007')
-    );
-  }
-
-  private setupHealthCheck() {
-    this.expressApp.get('/health', (req, res) => {
-      res.status(200).send('OK');
+  afterInit() {
+    this.httpServer = http.createServer(this.app);
+    this.httpServer.listen(3006, () => {
+      this.logger.log('Health check server running on port 3007');
     });
   }
 
   async handleConnection(socket: Socket) {
     const token = socket.handshake.query.access_token as string;
-    this.logger.debug(`Connection attempt with token: ${token}`);
-
     if (!token) {
       socket.disconnect(true);
-      this.logger.warn(`Client rejected: No token`);
-      return;
+      return this.logger.warn('Client rejected: No token');
     }
 
-    const userServiceUrl = this.configService.get<string>('USER_SERVICE_URL', 'http://localhost:3030');
     try {
+      const userServiceUrl = this.configService.get('USER_SERVICE_URL', 'http://localhost:3030');
       const response = await firstValueFrom(
-        this.httpService.post(`${userServiceUrl}/auth/verify`, { access_token: token }, {
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        this.httpService.post(
+          `${userServiceUrl}/auth/verify`,
+          { access_token: token },
+          { headers: { 'Content-Type': 'application/json' } }
+        )
       );
       
       const userId = response.data.userId;
-      this.logger.log(`Client ${socket.id} connected: User ${userId}`);
       this.clients.set(socket.id, { userId, siteName: '' });
-
+      this.logger.log(`Client ${socket.id} connected: User ${userId}`);
     } catch (e) {
       this.logger.error(`Token verification failed: ${e.message}`);
       socket.disconnect(true);
@@ -290,8 +278,8 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
   }
 
   handleDisconnect(socket: Socket) {
-    this.logger.log(`Client ${socket.id} disconnected`);
     this.clients.delete(socket.id);
+    this.logger.log(`Client ${socket.id} disconnected`);
   }
 
   @SubscribeMessage('subscribeMetrics')
@@ -300,49 +288,36 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
     payload: { siteName: string; range: string }
   ) {
     const client = this.clients.get(socket.id);
-    if (!client) {
-      socket.emit('error', 'Client not authenticated');
-      return;
-    }
-
-    const { userId } = client;
-    const { siteName, range } = payload;
+    if (!client) return socket.emit('error', 'Client not authenticated');
     
-    if (!siteName || !range) {
-      socket.emit('error', 'Missing siteName or range');
-      return;
-    }
+    const { siteName, range } = payload;
+    if (!siteName || !range) return socket.emit('error', 'Missing siteName or range');
 
     this.clients.set(socket.id, { ...client, siteName });
-    this.logger.debug(`Client ${socket.id} subscribed to site ${siteName}`);
-
+    
     try {
       const [realtime, historical] = await Promise.all([
-        this.monitoringService.collectECSMetricsss(userId, siteName),
-        this.monitoringService.getHistoricalMetrics(userId, parseInt(range, 10), siteName),
+        this.monitoringService.collectECSMetricsss(client.userId, siteName),
+        this.monitoringService.getHistoricalMetrics(client.userId, parseInt(range, 10), siteName),
       ]);
       socket.emit('metricsUpdate', realtime);
       socket.emit('historicalMetrics', historical);
     } catch (err) {
-      this.logger.error(`Metrics fetch failed: ${err.message}`);
       socket.emit('error', `Failed to fetch metrics: ${err.message}`);
     }
   }
 
   @Interval(3000)
   async handleMetricsUpdate() {
-    this.logger.debug(`Running metrics update for ${this.clients.size} clients`);
     for (const [socketId, { userId, siteName }] of this.clients) {
       if (!siteName) continue;
-      
       const socket = this.server.sockets.sockets.get(socketId);
-      if (!socket || !socket.connected) continue;
+      if (!socket?.connected) continue;
       
       try {
         const metrics = await this.monitoringService.collectECSMetricsss(userId, siteName);
         socket.emit('metricsUpdate', metrics);
       } catch (err) {
-        this.logger.error(`Failed to fetch metrics: ${err.message}`);
         socket.emit('error', `Failed to fetch metrics: ${err.message}`);
       }
     }
