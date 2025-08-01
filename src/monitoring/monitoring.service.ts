@@ -937,7 +937,16 @@ async getHistoricalMetricss(userId: number, hours: number, siteName : string): P
   }
 }
 async getHistoricalMetrics(userId: number, hours: number, siteName: string): Promise<any[]> {
-  const dynamoDbClient = new DynamoDBClient({ region: 'us-east-1' });
+
+   const awsAccessKeyId_management = this.configService.get<string>('AWS_ACCESS_KEY_ID');
+const awsSecretAccessKey_management = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
+
+  const dynamoDbClient = new DynamoDBClient({ region: 'us-east-1',
+       credentials: {
+    accessKeyId: awsAccessKeyId_management,
+    secretAccessKey: awsSecretAccessKey_management,
+  },
+   });
   const endTime = new Date();
   const startTime = new Date(endTime.getTime() - hours * 60 * 60 * 1000);
 
