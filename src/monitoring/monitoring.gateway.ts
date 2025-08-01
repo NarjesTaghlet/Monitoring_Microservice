@@ -253,7 +253,7 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
     });
     
     this.httpServer.listen(3007, () => {
-      this.logger.log('Health check server running on port 3007');
+      this.logger.log('Health check server running on port 3006');
     });
   }
 
@@ -344,3 +344,4 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
     }
   }
 }
+  
