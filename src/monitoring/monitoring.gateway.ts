@@ -250,7 +250,7 @@ export class MonitoringGateway implements OnGatewayInit, OnGatewayConnection, On
 
   afterInit(server: Server) {
     this.httpServer = http.createServer(this.expressApp);
-    this.httpServer.listen(3007, () => 
+    this.httpServer.listen(3006, () => 
       this.logger.log('Health check server running on port 3007')
     );
   }
